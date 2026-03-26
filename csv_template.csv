@@ -1,2 +1,0 @@
-path,prompt,question,recommendations,folder
-/d/ideaworkspace/VBlog-master/blogserver/src/main/java/org/sang,目前这个项目中存在的问题是${question}，给出的建议的${recommendations}，对${folder}文件夹下的文件进行修复,没有健康探针的接口,在每个文件中增加探针接口,controller
