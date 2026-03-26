@@ -5,7 +5,7 @@ const webpack = require("webpack");
 module.exports = {
   mode: "production",
   target: "node18",
-  entry: "./dist/cli.js",
+  entry: "./dist/src/cli.js",
   devtool: "source-map",
   externalsPresets: { node: true },
   output: {
