@@ -1,0 +1,44 @@
+# 批量名称
+name: "LR46.06_PhSpec项目分析"
+
+# 日志控制
+log:
+  # 每个任务的日志，会在task_path对应路径下生成process_logs文件夹
+  task_path: D:/A码云项目/OpenSpec/LR46.06_PhSpec/logs
+  # 控制台所有过程日志，会打印到path对应的路径文件里面
+  path: D:/A码云项目/OpenSpec/LR46.06_PhSpec/logs/analysis.log
+  # 控制台是否打印模型返回内容(即使控制台不打印，在process_logs下的对应文件中也会打印)
+  console_flag: true
+  # 是否开启debug日志打印更多内容
+  debug: false
+
+# 目标文件范围
+target:
+  # 目标文件目录
+  directory: "D:/A码云项目/OpenSpec/LR46.06_PhSpec"
+  # 扫描的文件后缀，想扫描全部则把include这部分内容进行注释
+  include:
+    - "java"
+    - "xml"
+    - "properties"
+    - "yml"
+    - "yaml"
+    - "sql"
+    - "md"
+  # 可以排除的文件夹，不想排除可把exclude这部分内容进行注释
+  exclude:
+    - "**/target/**"
+    - "**/build/**"
+    - "**/.git/**"
+    - "**/node_modules/**"
+    - "**/logs/**"
+
+# 运行模式以及指令
+run_mode:
+  # 类型：1-使用prompt运行，2-从prompt_template_path路径对应的文件中读取prompt，3-从csv模板中读取任务，拼接prompt
+  # type为1/2时，运行模式为：循环文件，使用固定prompt模板运行。${file}参数会自动替换为target运行后扫描出来的文件路径，1个文件会运行1次任务
+  # type为3时，运行模式为：循环csv文件每一行，根据每一行的内容拼接完整的prompt运行任务，1行数据会运行1次任务，csv文件第一列为path，第二列为prompt，后续列可自由拓展，可通过参数拼接到prompt中
+  type: 1
+  prompt: "请分析${file}文件，总结其主要功能、代码结构和关键实现逻辑"
+  prompt_template_path: "D:/A码云项目/OpenSpec/LR46.06_PhSpec/prompt_template.txt"
+  csv_template_path: "D:/A码云项目/OpenSpec/LR46.06_PhSpec/csv_template.csv"
