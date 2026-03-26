@@ -1,7 +1,8 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import { buildApplyPrompt } from "../src/agent/promptBuilder.js";
 import type { ChangeItem } from "../src/types.js";
 
@@ -34,9 +35,9 @@ describe("prompt builder", () => {
     };
 
     const prompt = await buildApplyPrompt(change);
-    expect(prompt).toContain("tasks.md:");
-    expect(prompt).toContain("implement dark mode");
-    expect(prompt).toContain("proposal.md:");
-    expect(prompt).toContain("COMPLETED:");
+    assert.ok(prompt.includes("tasks.md:"));
+    assert.ok(prompt.includes("implement dark mode"));
+    assert.ok(prompt.includes("proposal.md:"));
+    assert.ok(prompt.includes("COMPLETED:"));
   });
 });
