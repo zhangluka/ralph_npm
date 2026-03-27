@@ -7,6 +7,7 @@ import {
   logWarning,
   logError,
 } from "../reporting/consoleLogger.js";
+import { LoadingSpinner, BufferedOutput } from "../utils/loading.js";
 
 // 增加 AbortSignal 的最大监听器数量以避免内存泄漏警告
 // 这在高并发场景下是必要的
@@ -48,18 +49,42 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
     logDebug(`Agent process spawned with PID: ${child.pid}`);
 
+    // 创建带缓冲的输出器
+    const stdoutBuffer = new BufferedOutput(process.stdout, {
+      flushMs: 50,      // 每 50ms 刷新一次
+      maxChunkSize: 1000, // 每次最多输出 1000 字节
+    });
+    const stderrBuffer = new BufferedOutput(process.stderr, {
+      flushMs: 50,
+      maxChunkSize: 1000,
+    });
+
+    // 启动缓冲器
+    stdoutBuffer.startFlushing();
+    stderrBuffer.startFlushing();
+
     let stdout = "";
     let stderr = "";
     let timedOut = false;
     let resolved = false;
     let stdoutLines = 0;
     let stderrLines = 0;
+    let hasOutput = false;
+
+    // 启动 loading 动画
+    LoadingSpinner.start("Agent is working...");
 
     const finalize = (payload: Partial<AgentRunResult>) => {
       if (resolved) {
         return;
       }
       resolved = true;
+
+      // 停止 loading 动画和缓冲器
+      LoadingSpinner.stop();
+      stdoutBuffer.destroy();
+      stderrBuffer.destroy();
+
       const finishedAt = new Date().toISOString();
       const duration = Date.now() - startTs;
       logDebug(`Agent process finalized (duration: ${duration}ms, stdout lines: ${stdoutLines}, stderr lines: ${stderrLines})`);
@@ -77,6 +102,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
     const timer = setTimeout(() => {
       timedOut = true;
+      // 暂停 loading 动画以显示超时消息
+      LoadingSpinner.stop();
       logWarning(`Agent timeout (${options.timeoutMs}ms exceeded), terminating process...`);
       child.kill("SIGTERM");
       setTimeout(() => {
@@ -90,8 +117,15 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       stdout += text;
       const newLines = (text.match(/\n/g) || []).length;
       stdoutLines += newLines;
-      // 实时打印输出到控制台
-      process.stdout.write(text);
+
+      // 首次输出时停止 loading 动画
+      if (!hasOutput) {
+        hasOutput = true;
+        LoadingSpinner.stop(false);
+      }
+
+      // 使用缓冲输出
+      stdoutBuffer.write(text);
     });
 
     child.stderr.on("data", (chunk) => {
@@ -99,8 +133,15 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       stderr += text;
       const newLines = (text.match(/\n/g) || []).length;
       stderrLines += newLines;
-      // 实时打印错误到控制台
-      process.stderr.write(text);
+
+      // 首次输出时停止 loading 动画
+      if (!hasOutput) {
+        hasOutput = true;
+        LoadingSpinner.stop(false);
+      }
+
+      // 使用缓冲输出
+      stderrBuffer.write(text);
     });
 
     child.on("error", (error) => {
