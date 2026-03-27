@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { setMaxListeners } from "node:events";
 import type { AgentRunResult } from "../types.js";
 import {
   logInfo,
@@ -6,6 +7,10 @@ import {
   logWarning,
   logError,
 } from "../reporting/consoleLogger.js";
+
+// 增加 AbortSignal 的最大监听器数量以避免内存泄漏警告
+// 这在高并发场景下是必要的
+setMaxListeners(50);
 
 export interface RunAgentOptions {
   command: string;
