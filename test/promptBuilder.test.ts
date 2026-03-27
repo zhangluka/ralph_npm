@@ -35,9 +35,8 @@ describe("prompt builder", () => {
     };
 
     const prompt = await buildApplyPrompt(change);
-    assert.ok(prompt.includes("tasks.md:"));
-    assert.ok(prompt.includes("implement dark mode"));
-    assert.ok(prompt.includes("proposal.md:"));
-    assert.ok(prompt.includes("COMPLETED:"));
+    // 当前实现使用 slash command 调用 phspec 的 apply
+    assert.ok(prompt.includes("/phspec-apply"));
+    assert.ok(prompt.includes("add-dark-mode"));
   });
 });

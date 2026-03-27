@@ -27,13 +27,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   logInfo(`Agent process starting (attempt ${options.attempt})`);
   logInfo(`Timeout set to ${options.timeoutMs}ms`);
   logInfo(`Command: ${options.command}`);
+  logInfo(`Prompt length: ${options.prompt.length} characters (${(options.prompt.length / 1024).toFixed(2)} KB)`);
 
   // Output full prompt
   logInfo("Prompt sent to agent:");
   console.log("────────────────────────────────────────────────────────────────────────────────");
   console.log(options.prompt);
   console.log("────────────────────────────────────────────────────────────────────────────────");
-  logInfo(`Prompt length: ${options.prompt.length} characters`);
 
   return await new Promise<AgentRunResult>((resolve) => {
     const child = spawn(options.command, {
@@ -86,15 +86,21 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     }, options.timeoutMs);
 
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-      const newLines = (chunk.toString().match(/\n/g) || []).length;
+      const text = chunk.toString();
+      stdout += text;
+      const newLines = (text.match(/\n/g) || []).length;
       stdoutLines += newLines;
+      // 实时打印输出到控制台
+      process.stdout.write(text);
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-      const newLines = (chunk.toString().match(/\n/g) || []).length;
+      const text = chunk.toString();
+      stderr += text;
+      const newLines = (text.match(/\n/g) || []).length;
       stderrLines += newLines;
+      // 实时打印错误到控制台
+      process.stderr.write(text);
     });
 
     child.on("error", (error) => {

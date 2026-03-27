@@ -8,7 +8,11 @@
       "Bash(git remote:*)",
       "Bash(npm run:*)",
       "Bash(tsc:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(find /Users/bobby/Projects/Github/zhangluka/ralph_npm -type f -name *.json -o -name *.yml -o -name *.yaml)",
+      "Bash(find /Users/bobby/Projects/Github/zhangluka/ralph_npm -name phspec* -o -name *phspec* -o -name claude*.json -o -name settings*.json)",
+      "Bash(node -e \":*)",
+      "Bash(npm test:*)"
     ]
   }
 }
