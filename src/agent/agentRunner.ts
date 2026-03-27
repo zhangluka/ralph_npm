@@ -9,9 +9,10 @@ import {
 } from "../reporting/consoleLogger.js";
 import { LoadingSpinner } from "../utils/loading.js";
 
-// 增加 AbortSignal 的最大监听器数量以避免内存泄漏警告
-// devagent 可能会创建多个 AbortSignal，需要更高的限制
-setMaxListeners(100);
+// Increase max listeners to avoid memory leak warnings
+// devagent may create many AbortSignals, need very high limit
+// Set to Infinity to completely disable this warning
+setMaxListeners(Infinity);
 
 export interface RunAgentOptions {
   command: string;
@@ -37,7 +38,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   console.log("────────────────────────────────────────────────────────────────────────────────");
 
   return await new Promise<AgentRunResult>((resolve) => {
-    const child = spawn(options.command, {
+    // Use stream-json format for real-time streaming output
+    // This provides real-time execution progress and logs
+    const commandWithFormat = `${options.command} --output-format stream-json --include-partial-messages`;
+
+    // Connect to stdout/stderr for real-time output
+    // Streams will flush immediately with no buffering
+    const child = spawn(commandWithFormat, {
       cwd: options.cwd,
       shell: true,
       stdio: ["pipe", "pipe", "pipe"],
@@ -48,6 +55,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     });
 
     logDebug(`Agent process spawned with PID: ${child.pid}`);
+    logDebug(`Using stream-json format for real-time output`);
 
     let stdout = "";
     let stderr = "";
@@ -57,16 +65,55 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     let stderrLines = 0;
     let hasOutput = false;
 
-    // 启动 loading 动画
+    // Start loading animation
     LoadingSpinner.start("Agent is working...");
 
-    const finalize = (payload: Partial<AgentRunResult>) => {
+    // Need to capture output for logging
+    const stdoutStream = child.stdout;
+    if (stdoutStream) {
+      stdoutStream.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stdout += text;
+        const newLines = (text.match(/\n/g) || []).length;
+        stdoutLines += newLines;
+
+        // Stop loading animation on first output
+        if (!hasOutput) {
+          hasOutput = true;
+          LoadingSpinner.stop(false);
+        }
+
+        // Write to stdout immediately
+        process.stdout.write(text);
+      });
+    }
+
+    const stderrStream = child.stderr;
+    if (stderrStream) {
+      stderrStream.on("data", (chunk: Buffer) => {
+        const text = chunk.toString();
+        stderr += text;
+        const newLines = (text.match(/\n/g) || []).length;
+        stderrLines += newLines;
+
+        // Stop loading animation on first output
+        if (!hasOutput) {
+          hasOutput = true;
+          LoadingSpinner.stop(false);
+        }
+
+        // Write to stderr immediately
+        process.stderr.write(text);
+      });
+    }
+
+    const finalize = (payload: Partial<AgentRunResult>): void => {
       if (resolved) {
         return;
       }
       resolved = true;
 
-      // 停止 loading 动画
+      // Stop loading animation
       LoadingSpinner.stop();
 
       const finishedAt = new Date().toISOString();
@@ -86,47 +133,15 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
     const timer = setTimeout(() => {
       timedOut = true;
-      // 停止 loading 动画以显示超时消息
+      // Stop loading animation to show timeout message
       LoadingSpinner.stop();
       logWarning(`Agent timeout (${options.timeoutMs}ms exceeded), terminating process...`);
       child.kill("SIGTERM");
       setTimeout(() => {
-        logError(`Agent did not terminate gracefully, force killing...`);
+        logError("Agent did not terminate gracefully, force killing...");
         child.kill("SIGKILL");
       }, 2000).unref();
     }, options.timeoutMs);
-
-    child.stdout.on("data", (chunk) => {
-      const text = chunk.toString();
-      stdout += text;
-      const newLines = (text.match(/\n/g) || []).length;
-      stdoutLines += newLines;
-
-      // 首次输出时停止 loading 动画
-      if (!hasOutput) {
-        hasOutput = true;
-        LoadingSpinner.stop(false);
-      }
-
-      // 实时输出，不使用缓冲
-      process.stdout.write(text);
-    });
-
-    child.stderr.on("data", (chunk) => {
-      const text = chunk.toString();
-      stderr += text;
-      const newLines = (text.match(/\n/g) || []).length;
-      stderrLines += newLines;
-
-      // 首次输出时停止 loading 动画
-      if (!hasOutput) {
-        hasOutput = true;
-        LoadingSpinner.stop(false);
-      }
-
-      // 实时输出，不使用缓冲
-      process.stderr.write(text);
-    });
 
     child.on("error", (error) => {
       clearTimeout(timer);
@@ -142,7 +157,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       logDebug(`Agent process closed (exit code: ${code})`);
 
       if (timedOut) {
-        logWarning(`Agent terminated due to timeout`);
+        logWarning("Agent terminated due to timeout");
         finalize({ exitCode: code, failureKind: "timeout" });
         return;
       }
@@ -151,13 +166,16 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
         finalize({ exitCode: code, failureKind: "agent_error" });
         return;
       }
-      logDebug(`Agent exited successfully`);
+      logDebug("Agent exited successfully");
       finalize({ exitCode: code });
     });
 
-    logDebug(`Writing prompt to agent stdin...`);
-    child.stdin.write(options.prompt);
-    child.stdin.end();
-    logInfo(`Prompt sent to agent stdin`);
+    logDebug("Writing prompt to agent stdin...");
+    const stdinStream = child.stdin;
+    if (stdinStream) {
+      stdinStream.write(options.prompt);
+      stdinStream.end();
+    }
+    logInfo("Prompt sent to agent stdin");
   });
 }
