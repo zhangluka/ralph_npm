@@ -7,11 +7,11 @@ import {
   logWarning,
   logError,
 } from "../reporting/consoleLogger.js";
-import { LoadingSpinner, BufferedOutput } from "../utils/loading.js";
+import { LoadingSpinner } from "../utils/loading.js";
 
 // 增加 AbortSignal 的最大监听器数量以避免内存泄漏警告
-// 这在高并发场景下是必要的
-setMaxListeners(50);
+// devagent 可能会创建多个 AbortSignal，需要更高的限制
+setMaxListeners(100);
 
 export interface RunAgentOptions {
   command: string;
@@ -49,20 +49,6 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
     logDebug(`Agent process spawned with PID: ${child.pid}`);
 
-    // 创建带缓冲的输出器
-    const stdoutBuffer = new BufferedOutput(process.stdout, {
-      flushMs: 50,      // 每 50ms 刷新一次
-      maxChunkSize: 1000, // 每次最多输出 1000 字节
-    });
-    const stderrBuffer = new BufferedOutput(process.stderr, {
-      flushMs: 50,
-      maxChunkSize: 1000,
-    });
-
-    // 启动缓冲器
-    stdoutBuffer.startFlushing();
-    stderrBuffer.startFlushing();
-
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -80,10 +66,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       }
       resolved = true;
 
-      // 停止 loading 动画和缓冲器
+      // 停止 loading 动画
       LoadingSpinner.stop();
-      stdoutBuffer.destroy();
-      stderrBuffer.destroy();
 
       const finishedAt = new Date().toISOString();
       const duration = Date.now() - startTs;
@@ -102,7 +86,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
 
     const timer = setTimeout(() => {
       timedOut = true;
-      // 暂停 loading 动画以显示超时消息
+      // 停止 loading 动画以显示超时消息
       LoadingSpinner.stop();
       logWarning(`Agent timeout (${options.timeoutMs}ms exceeded), terminating process...`);
       child.kill("SIGTERM");
@@ -124,8 +108,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
         LoadingSpinner.stop(false);
       }
 
-      // 使用缓冲输出
-      stdoutBuffer.write(text);
+      // 实时输出，不使用缓冲
+      process.stdout.write(text);
     });
 
     child.stderr.on("data", (chunk) => {
@@ -140,8 +124,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
         LoadingSpinner.stop(false);
       }
 
-      // 使用缓冲输出
-      stderrBuffer.write(text);
+      // 实时输出，不使用缓冲
+      process.stderr.write(text);
     });
 
     child.on("error", (error) => {
