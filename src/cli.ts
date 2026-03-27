@@ -13,11 +13,13 @@ import {
   logSection,
   logSuccess,
   logInfo,
+  logDebug,
   logError,
   logWarning,
   logSummary,
   logNextStep,
 } from "./reporting/consoleLogger.js";
+import type { RunSummary } from "./types.js";
 
 interface CommonOptions {
   changesDir?: string;
@@ -159,9 +161,37 @@ program
     const runPaths = await ensureRunPaths(projectRoot);
     const statePath = resolveRunStatePath(runPaths.runsDir, runId);
 
-    logInfo(`Reading run state for: ${runId}`);
-    const summary = await readRunState(statePath);
-    logSuccess("Run state loaded");
+    logInfo(`Reading run state for runId: ${runId}`);
+    logDebug(`State file path: ${statePath}`);
+
+    let summary: RunSummary | null = null;
+    try {
+      summary = await readRunState(statePath);
+      logSuccess("Run state loaded");
+    } catch (error) {
+      const err = error as { code?: string };
+      if (err.code === "ENOENT") {
+        logError(`Run state file not found: ${statePath}`);
+        logInfo(`This may be because:`);
+        logInfo(`  1. The run was interrupted before state could be saved`);
+        logInfo(`  2. The run ID is incorrect`);
+        logInfo(`  3. The state file was deleted`);
+        console.log("");
+        logInfo(`You can check the logs directory for available runs:`);
+        logInfo(`  ${path.join(runPaths.logsDir)}`);
+        console.log("");
+        logInfo(`Or use 'phspec-auto-apply list' to see available changes.`);
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
+
+    if (!summary) {
+      logError("Summary is null, this should not happen");
+      process.exitCode = 1;
+      return;
+    }
 
     logSummary("Run Info", {
       runId: summary.runId,
