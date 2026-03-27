@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import type { AgentRunResult } from "../types.js";
 import {
+  logInfo,
   logDebug,
   logWarning,
   logError,
@@ -18,8 +19,16 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   const startedAt = new Date().toISOString();
   const startTs = Date.now();
 
-  logDebug(`Agent process starting (attempt ${options.attempt})`);
-  logDebug(`Timeout set to ${options.timeoutMs}ms`);
+  logInfo(`Agent process starting (attempt ${options.attempt})`);
+  logInfo(`Timeout set to ${options.timeoutMs}ms`);
+  logInfo(`Command: ${options.command}`);
+
+  // Output full prompt
+  logInfo("Prompt sent to agent:");
+  console.log("────────────────────────────────────────────────────────────────────────────────");
+  console.log(options.prompt);
+  console.log("────────────────────────────────────────────────────────────────────────────────");
+  logInfo(`Prompt length: ${options.prompt.length} characters`);
 
   return await new Promise<AgentRunResult>((resolve) => {
     const child = spawn(options.command, {
@@ -113,6 +122,6 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     logDebug(`Writing prompt to agent stdin...`);
     child.stdin.write(options.prompt);
     child.stdin.end();
-    logDebug(`Prompt written (${options.prompt.length} characters)`);
+    logInfo(`Prompt sent to agent stdin`);
   });
 }

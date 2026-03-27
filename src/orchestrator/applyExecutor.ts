@@ -20,7 +20,6 @@ import {
   logTaskRetry,
   logCommand,
   logNextStep,
-  logAgentOutput,
   logSubsection,
 } from "../reporting/consoleLogger.js";
 
@@ -178,7 +177,6 @@ export async function executeApplyQueue(
 
         logTaskProgress(change.id, `running agent (attempt ${attempt}/${options.retry + 1})...`);
         logCommand(options.agentCommand, options.projectRoot);
-        logAgentOutput("Prompt", prompt, 300);
 
         const result = await runAgent({
           command: options.agentCommand,
@@ -187,9 +185,6 @@ export async function executeApplyQueue(
           timeoutMs: options.timeoutMs,
           attempt,
         });
-
-        logAgentOutput("Agent stdout", result.stdout);
-        logAgentOutput("Agent stderr", result.stderr);
 
         logTaskProgress(change.id, `agent finished (exitCode: ${result.exitCode}, duration: ${result.durationMs}ms)`);
 
