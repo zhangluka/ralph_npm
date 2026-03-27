@@ -2,12 +2,12 @@
   "name": "phspec-auto-apply",
   "version": "0.1.0",
   "description": "Auto apply PhSpec changes by calling agent from CLI.",
-  "main": "dist/cli.js",
+  "main": "dist/cli.cjs",
   "scripts": {
-    "test": "vitest run",
-    "build": "tsc -p tsconfig.json",
+    "test": "tsc -p tsconfig.test.json && node --test dist-test/test/**/*.test.js",
+    "build": "tsc -p tsconfig.json && webpack --config webpack.config.cjs",
     "dev": "tsx src/cli.ts",
-    "test:watch": "vitest"
+    "test:watch": "tsc -p tsconfig.test.json && node --test --watch dist-test/test/**/*.test.js"
   },
   "keywords": [],
   "author": "",
@@ -15,15 +15,16 @@
   "private": true,
   "type": "module",
   "bin": {
-    "phspec-auto-apply": "dist/cli.js"
+    "phspec-auto-apply": "dist/cli.cjs"
   },
   "dependencies": {
     "commander": "^14.0.3"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
+    "@types/node": "^20.0.0",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "typescript": "^5.6.3",
+    "webpack": "^5.105.4",
+    "webpack-cli": "^6.0.1"
   }
 }

@@ -1,7 +1,8 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import { buildApplyPrompt } from "../src/agent/promptBuilder.js";
 import type { ChangeItem } from "../src/types.js";
 
@@ -34,9 +35,8 @@ describe("prompt builder", () => {
     };
 
     const prompt = await buildApplyPrompt(change);
-    expect(prompt).toContain("tasks.md:");
-    expect(prompt).toContain("implement dark mode");
-    expect(prompt).toContain("proposal.md:");
-    expect(prompt).toContain("COMPLETED:");
+    // 当前实现使用 slash command 调用 phspec 的 apply
+    assert.ok(prompt.includes("/phspec-apply"));
+    assert.ok(prompt.includes("add-dark-mode"));
   });
 });

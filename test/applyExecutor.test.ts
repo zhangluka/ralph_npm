@@ -1,7 +1,8 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import { scanChanges } from "../src/discovery/changeScanner.js";
 import { executeApplyQueue } from "../src/orchestrator/applyExecutor.js";
 import { createRunId, ensureRunPaths } from "../src/reporting/logger.js";
@@ -44,9 +45,9 @@ describe("apply executor", () => {
       logsDir: runPaths.logsDir,
     });
 
-    expect(result.summary.totals.ready).toBe(1);
-    expect(result.summary.totals.success).toBe(0);
-    expect(result.summary.records[0]?.message).toContain("dry-run");
+    assert.equal(result.summary.totals.ready, 1);
+    assert.equal(result.summary.totals.success, 0);
+    assert.ok(result.summary.records[0]?.message?.includes("dry-run"));
   });
 
   it("retries and succeeds on second attempt", async () => {
@@ -73,12 +74,12 @@ describe("apply executor", () => {
       logsDir: runPaths.logsDir,
     });
 
-    expect(result.summary.totals.success).toBe(1);
-    expect(result.summary.records[0]?.attempts).toBe(2);
-    expect(result.summary.records[0]?.status).toBe("success");
+    assert.equal(result.summary.totals.success, 1);
+    assert.equal(result.summary.records[0]?.attempts, 2);
+    assert.equal(result.summary.records[0]?.status, "success");
     const logPath = result.summary.records[0]?.logPath;
-    expect(logPath).toBeTruthy();
+    assert.ok(logPath);
     const logContent = await readFile(String(logPath), "utf8");
-    expect(logContent).toContain("ok-second");
+    assert.ok(logContent.includes("ok-second"));
   });
 });

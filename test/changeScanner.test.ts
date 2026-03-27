@@ -1,7 +1,8 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
 import { resolveChangesDir, scanChanges } from "../src/discovery/changeScanner.js";
 
 const tempRoots: string[] = [];
@@ -22,7 +23,7 @@ describe("change scanner", () => {
     await mkdir(changesDir, { recursive: true });
 
     const resolved = await resolveChangesDir(root);
-    expect(resolved).toBe(changesDir);
+    assert.equal(resolved, changesDir);
   });
 
   it("skips archive and marks apply-ready by tasks.md", async () => {
@@ -40,8 +41,8 @@ describe("change scanner", () => {
     await writeFile(path.join(ready, "tasks.md"), "- [ ] task 1\n", "utf8");
 
     const changes = await scanChanges(changesDir);
-    expect(changes).toHaveLength(2);
-    expect(changes.find((c) => c.id === "add-dark-mode")?.state).toBe("ready");
-    expect(changes.find((c) => c.id === "add-logs")?.state).toBe("not-ready");
+    assert.equal(changes.length, 2);
+    assert.equal(changes.find((c) => c.id === "add-dark-mode")?.state, "ready");
+    assert.equal(changes.find((c) => c.id === "add-logs")?.state, "not-ready");
   });
 });

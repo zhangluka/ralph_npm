@@ -9,17 +9,18 @@ import {
   readRunState,
   resolveRunStatePath,
 } from "./reporting/logger.js";
+import {
+  logSection,
+  logSuccess,
+  logInfo,
+  logError,
+  logWarning,
+  logSummary,
+  logNextStep,
+} from "./reporting/consoleLogger.js";
 
 interface CommonOptions {
   changesDir?: string;
-}
-
-function printSummary(summary: Awaited<ReturnType<typeof executeApplyQueue>>["summary"]): void {
-  console.log(`runId: ${summary.runId}`);
-  console.log(`changesDir: ${summary.changesDir}`);
-  console.log(
-    `totals => total=${summary.totals.total}, ready=${summary.totals.ready}, skipped=${summary.totals.skipped}, success=${summary.totals.success}, failed=${summary.totals.failed}`,
-  );
 }
 
 const program = new Command();
@@ -33,24 +34,39 @@ program
   .description("List apply-ready changes (tasks.md exists).")
   .option("--changes-dir <path>", "changes directory, e.g. phspec/changes")
   .action(async (opts: CommonOptions) => {
+    logSection("PhSpec Auto Apply - List Changes");
+
     const projectRoot = process.cwd();
+    logInfo(`Project root: ${projectRoot}`);
+
     const changesDir = await resolveChangesDir(projectRoot, opts.changesDir);
+    logSuccess(`Changes directory resolved: ${changesDir}`);
+
     const changes = await scanChanges(changesDir);
+    logInfo(`Scanned ${changes.length} changes`);
+
     const ready = changes.filter((item) => item.state === "ready");
     const notReady = changes.filter((item) => item.state === "not-ready");
 
-    console.log(`projectRoot: ${projectRoot}`);
-    console.log(`changesDir: ${changesDir}`);
-    console.log("");
-    console.log(`apply-ready (${ready.length}):`);
-    for (const item of ready) {
-      console.log(`- ${item.id}`);
+    logSummary("Apply-ready changes", {
+      count: ready.length,
+      items: ready.map((item) => item.id),
+    });
+
+    if (ready.length > 0) {
+      logNextStep("Use 'phspec-auto-apply run' to apply these changes");
     }
-    console.log("");
-    console.log(`not-ready (${notReady.length}):`);
-    for (const item of notReady) {
-      console.log(`- ${item.id}: ${item.reason ?? "not ready"}`);
-    }
+
+    logSummary("Not-ready changes", {
+      count: notReady.length,
+      items: notReady.map((item) => ({ id: item.id, reason: item.reason ?? "not ready" })),
+    });
+
+    logSummary("Total", {
+      total: changes.length,
+      ready: ready.length,
+      notReady: notReady.length,
+    });
   });
 
 program
@@ -64,16 +80,44 @@ program
   .option("--dry-run", "only detect and print, do not execute")
   .option("--resume <runId>", "resume from existing run id")
   .action(async (opts: CommonOptions & Record<string, string | boolean | undefined>) => {
+    logSection("PhSpec Auto Apply - Run");
+
     const projectRoot = process.cwd();
+    logInfo(`Project root: ${projectRoot}`);
+
     const runPaths = await ensureRunPaths(projectRoot);
+    logInfo(`Run paths initialized`);
+
     const changesDir = await resolveChangesDir(projectRoot, opts.changesDir);
+    logSuccess(`Changes directory: ${changesDir}`);
+
     const changes = await scanChanges(changesDir);
+    const readyChanges = changes.filter((item) => item.state === "ready");
+    logInfo(`Found ${changes.length} changes, ${readyChanges.length} ready to apply`);
+
     const runId = typeof opts.resume === "string" ? opts.resume : createRunId();
+    if (opts.resume) {
+      logInfo(`Resuming from run ID: ${runId}`);
+    } else {
+      logInfo(`New run ID: ${runId}`);
+    }
+
+    const agentCommand = String(opts.agentCmd ?? "devagent --yolo");
+    logInfo(`Agent command: ${agentCommand}`);
+    logInfo(`Concurrency: ${opts.concurrency ?? 1}`);
+    logInfo(`Max retries: ${opts.retry ?? 1}`);
+    logInfo(`Timeout: ${opts.timeoutMs ?? 1200000}ms`);
+
+    if (opts.dryRun) {
+      logWarning("Dry-run mode: No actual changes will be applied");
+    }
+
+    logNextStep("Starting execution queue");
 
     const result = await executeApplyQueue(changes, {
       projectRoot,
       changesDir,
-      agentCommand: String(opts.agentCmd ?? "devagent --yolo"),
+      agentCommand,
       retry: Number(opts.retry ?? 1),
       timeoutMs: Number(opts.timeoutMs ?? 1200000),
       concurrency: Number(opts.concurrency ?? 1),
@@ -83,10 +127,24 @@ program
       logsDir: runPaths.logsDir,
     });
 
-    printSummary(result.summary);
+    logSection("Execution Summary");
+    logSummary("Run Info", {
+      runId: result.summary.runId,
+      changesDir: result.summary.changesDir,
+    });
+
+    logSummary("Statistics", result.summary.totals);
+
     if (!opts.dryRun) {
-      console.log(`state: ${result.statePath}`);
-      console.log(`logs: ${path.join(runPaths.logsDir, runId)}`);
+      logSuccess(`State saved to: ${result.statePath}`);
+      logSuccess(`Logs saved to: ${path.join(runPaths.logsDir, runId)}`);
+    }
+
+    const { success, failed } = result.summary.totals;
+    if (failed === 0 && success > 0) {
+      logSuccess("All changes applied successfully!");
+    } else if (failed > 0) {
+      logError(`${failed} change(s) failed to apply`);
     }
   });
 
@@ -95,17 +153,45 @@ program
   .description("Show run report by runId.")
   .argument("<runId>", "run id")
   .action(async (runId: string) => {
+    logSection("PhSpec Auto Apply - Report");
+
     const projectRoot = process.cwd();
     const runPaths = await ensureRunPaths(projectRoot);
     const statePath = resolveRunStatePath(runPaths.runsDir, runId);
+
+    logInfo(`Reading run state for: ${runId}`);
     const summary = await readRunState(statePath);
-    printSummary(summary);
+    logSuccess("Run state loaded");
+
+    logSummary("Run Info", {
+      runId: summary.runId,
+      projectRoot: summary.projectRoot,
+      changesDir: summary.changesDir,
+      agentCommand: summary.agentCommand,
+      createdAt: summary.createdAt,
+      updatedAt: summary.updatedAt,
+    });
+
+    logSummary("Statistics", summary.totals);
+
     console.log("");
-    console.log("records:");
+    logInfo("Change records:");
+
     for (const item of summary.records) {
-      console.log(
-        `- ${item.changeId}: status=${item.status}, attempts=${item.attempts}, failure=${item.failureKind ?? "-"}, log=${item.logPath ?? "-"}`,
-      );
+      const statusIcon = item.status === "success" ? "✓" : item.status === "failed" ? "✗" : "○";
+      const durationStr = item.durationMs ? ` (${(item.durationMs / 1000).toFixed(2)}s)` : "";
+      console.log(`  ${statusIcon} ${item.changeId}`);
+      console.log(`    status: ${item.status}${durationStr}`);
+      console.log(`    attempts: ${item.attempts}`);
+      if (item.failureKind) {
+        console.log(`    failure: ${item.failureKind}`);
+      }
+      if (item.message) {
+        console.log(`    message: ${item.message}`);
+      }
+      if (item.logPath) {
+        console.log(`    log: ${item.logPath}`);
+      }
     }
   });
 
