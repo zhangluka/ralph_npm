@@ -38,10 +38,12 @@ function getTimestamp(): string {
 }
 
 function formatIndent(count: number): string {
-  return "  ".repeat(count);
+  return " ".repeat(count);
 }
 
-function log(level: LogLevel, message: string, options: ConsoleLogOptions = {}): void {
+// Use process.stdout.write for real-time streaming output
+// This provides better control than console.log
+function writeLog(level: LogLevel, message: string, options: ConsoleLogOptions = {}): void {
   const {
     timestamp = true,
     indent = 0,
@@ -53,43 +55,47 @@ function log(level: LogLevel, message: string, options: ConsoleLogOptions = {}):
   const indentStr = formatIndent(indent);
   const timestampStr = timestamp ? ` [${getTimestamp()}]` : "";
 
-  console.log(`${color}${icon}${timestampStr}${reset} ${indentStr}${message}`);
+  // Build the message with color formatting
+  const formattedMessage = `${color}${icon}${timestampStr}${reset} ${indentStr}${message}`;
+
+  // Write to stdout and flush immediately
+  process.stdout.write(formattedMessage + "\n");
 }
 
 export function logInfo(message: string, options?: Omit<ConsoleLogOptions, "level">): void {
-  log(LogLevel.INFO, message, { ...options, level: LogLevel.INFO });
+  writeLog(LogLevel.INFO, message, { ...options, level: LogLevel.INFO });
 }
 
 export function logSuccess(message: string, options?: Omit<ConsoleLogOptions, "level">): void {
-  log(LogLevel.SUCCESS, message, { ...options, level: LogLevel.SUCCESS });
+  writeLog(LogLevel.SUCCESS, message, { ...options, level: LogLevel.SUCCESS });
 }
 
 export function logWarning(message: string, options?: Omit<ConsoleLogOptions, "level">): void {
-  log(LogLevel.WARNING, message, { ...options, level: LogLevel.WARNING });
+  writeLog(LogLevel.WARNING, message, { ...options, level: LogLevel.WARNING });
 }
 
 export function logError(message: string, options?: Omit<ConsoleLogOptions, "level">): void {
-  log(LogLevel.ERROR, message, { ...options, level: LogLevel.ERROR });
+  writeLog(LogLevel.ERROR, message, { ...options, level: LogLevel.ERROR });
 }
 
 export function logDebug(message: string, options?: Omit<ConsoleLogOptions, "level">): void {
   if (process.env.DEBUG === "true") {
-    log(LogLevel.DEBUG, message, { ...options, level: LogLevel.DEBUG });
+    writeLog(LogLevel.DEBUG, message, { ...options, level: LogLevel.DEBUG });
   }
 }
 
 export function logSection(title: string): void {
-  console.log("");
-  console.log(`\x1b[1;36m${"=".repeat(60)}\x1b[0m`);
-  console.log(`\x1b[1;36m${title}\x1b[0m`);
-  console.log(`\x1b[1;36m${"=".repeat(60)}\x1b[0m`);
+  process.stdout.write("\n");
+  process.stdout.write(`\x1b[1;36m${"=".repeat(60)}\x1b[0m}\n`);
+  process.stdout.write(`\x1b[1;36m${title}\x1b[0m\n`);
+  process.stdout.write(`\x1b[1;36m${"=".repeat(60)}\x1b[0m\n`);
 }
 
 export function logSubsection(title: string): void {
-  console.log("");
-  console.log(`\x1b[1;33m${"-".repeat(40)}\x1b[0m`);
-  console.log(`\x1b[1;33m${title}\x1b[0m`);
-  console.log(`\x1b[1;33m${"-".repeat(40)}\x1b[0m`);
+  process.stdout.write("\n");
+  process.stdout.write(`\x1b[1;33m${"-".repeat(40)}\x1b[0m\n`);
+  process.stdout.write(`\x1b[1;33m${title}\x1b[0m\n`);
+  process.stdout.write(`\x1b[1;33m${"-".repeat(40)}\x1b[0m\n`);
 }
 
 export function logCommand(command: string, cwd: string): void {
@@ -125,7 +131,7 @@ export function logSummary(title: string, data: Record<string, unknown>): void {
   logSubsection(title);
   for (const [key, value] of Object.entries(data)) {
     const displayValue = typeof value === "object" ? JSON.stringify(value) : String(value);
-    console.log(`  ${key}: ${displayValue}`);
+    process.stdout.write(`  ${key}: ${displayValue}\n`);
   }
 }
 
@@ -144,6 +150,6 @@ export function logAgentOutput(label: string, output: string, maxLength = 200): 
 }
 
 export function logNextStep(message: string): void {
-  console.log("");
+  process.stdout.write("\n");
   logInfo(`Next step: \x1b[1m${message}\x1b[0m`);
 }
