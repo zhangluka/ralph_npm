@@ -19,11 +19,22 @@ interface DevAgentStreamEvent {
   type: string;
   uuid: string;
   session_id: string;
-  event: {
+  message?: {
+    role: string;
+    content: Array<{ type: string; text?: string }>;
+  };
+  event?: {
     type: string;
     [key: string]: unknown;
     message_id?: string;
     parent_tool_use_id?: string;
+    text?: string;
+    delta?: { partial_json?: string };
+    content_block?: {
+      type: string;
+      name?: string;
+      input?: unknown;
+    };
   };
 }
 
@@ -53,7 +64,7 @@ const RELEVANT_TOOLS = new Set([
 /**
  * Check if an event should be visible to users
  */
-function shouldShowEvent(event: unknown): boolean {
+function shouldShowEvent(event: DevAgentStreamEvent): boolean {
   // Hide system events and tool_use tracking
   if (event.type === "system") return false;
   if (event.type === "tool_use") return false;
@@ -64,7 +75,7 @@ function shouldShowEvent(event: unknown): boolean {
   }
 
   // For stream_event with content_block_delta
-  if (event.type === "stream_event" && event.event?.type === "content_block_delta") {
+  if (event.type === "stream_event" && event.event && event.event.type === "content_block_delta") {
     return true;
   }
 
@@ -74,8 +85,8 @@ function shouldShowEvent(event: unknown): boolean {
 /**
  * Format a stream-event for user display
  */
-function formatStreamEvent(event: DevAgentStreamEvent, eventIndex: number): string | null {
-  const { type, event } = event;
+function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number): string | null {
+  const { type, event } = streamEvent;
 
   // Hide verbose events
   if (HIDDEN_EVENT_TYPES.has(type)) {
@@ -84,8 +95,8 @@ function formatStreamEvent(event: DevAgentStreamEvent, eventIndex: number): stri
 
   // Format message events with content
   if (type === "message") {
-    const role = event.message?.role;
-    const content = event.message?.content || [];
+    const role = streamEvent.message?.role;
+    const content = streamEvent.message?.content || [];
 
     for (const msg of content) {
       if (msg.type === "text" && msg.text) {
@@ -100,7 +111,7 @@ function formatStreamEvent(event: DevAgentStreamEvent, eventIndex: number): stri
 
   // Format text_delta (direct text output)
   if (type === "text_delta") {
-    const text = event.event?.text || "";
+    const text = event?.text || "";
     if (text && text.trim()) {
       process.stdout.write(text + "\n");
     }
@@ -108,8 +119,8 @@ function formatStreamEvent(event: DevAgentStreamEvent, eventIndex: number): stri
   }
 
   // Format content_block_delta (structured tool output)
-  if (type === "stream_event" && event.event?.type === "content_block_delta") {
-    const delta = event.event.delta as { partial_json?: string };
+  if (type === "stream_event" && event && event.type === "content_block_delta") {
+    const delta = event.delta as { partial_json?: string };
     if (delta?.partial_json) {
       try {
         const data = JSON.parse(delta.partial_json);
@@ -133,11 +144,11 @@ function formatStreamEvent(event: DevAgentStreamEvent, eventIndex: number): stri
   }
 
   // Format tool_use and content_block_start
-  if (type === "stream_event" && event.event?.type === "content_block_start") {
-    const { content_block } = event.event;
-    if (content_block.type === "tool_use") {
+  if (type === "stream_event" && event && event.type === "content_block_start") {
+    const content_block = event.content_block;
+    if (content_block?.type === "tool_use") {
       const { name, input } = content_block;
-      if (RELEVANT_TOOLS.has(name) && input) {
+      if (name && RELEVANT_TOOLS.has(name) && input) {
         process.stdout.write(`Tool: ${name}\n`);
       }
     }
