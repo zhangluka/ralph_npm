@@ -105,6 +105,32 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
     return null;
   }
 
+  // Format assistant events (text content from assistant)
+  if (type === "assistant" && streamEvent.message) {
+    const content = streamEvent.message.content || [];
+    for (const msg of content) {
+      if (msg.type === "text" && msg.text) {
+        // Add visual separator for better readability
+        process.stdout.write("\n🤖 Assistant:\n");
+        process.stdout.write(msg.text + "\n");
+        (process.stdout as any).flush?.();
+      }
+    }
+    return null;
+  }
+
+  // Format user events (text content from user)
+  if (type === "user" && streamEvent.message) {
+    const content = streamEvent.message.content || [];
+    for (const msg of content) {
+      if (msg.type === "text" && msg.text) {
+        process.stdout.write("👤 User: " + msg.text + "\n");
+        (process.stdout as any).flush?.();
+      }
+    }
+    return null;
+  }
+
   // Format text_delta (direct text output)
   if (type === "text_delta") {
     const text = event?.text || "";
@@ -146,8 +172,27 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
     const content_block = event.content_block;
     if (content_block?.type === "tool_use") {
       const { name, input } = content_block;
-      if (name && RELEVANT_TOOLS.has(name) && input) {
-        process.stdout.write(`Tool: ${name}\n`);
+      if (name && RELEVANT_TOOLS.has(name)) {
+        // Show tool name with icon
+        process.stdout.write(`\n🔧 ${name}\n`);
+
+        // Show key parameters for better context
+        if (input) {
+          const inputObj = input as Record<string, unknown>;
+          // Show file path for file operations
+          if (name === "read_file" && inputObj.file_path) {
+            process.stdout.write(`   📄 ${String(inputObj.file_path)}\n`);
+          }
+          // Show pattern for glob
+          else if (name === "glob" && inputObj.pattern) {
+            process.stdout.write(`   🔍 ${String(inputObj.pattern)}\n`);
+          }
+          // Show command for shell
+          else if (name === "run_shell_command" && inputObj.command) {
+            const cmd = String(inputObj.command);
+            process.stdout.write(`   💻 ${cmd.slice(0, 80)}${cmd.length > 80 ? "..." : ""}\n`);
+          }
+        }
         (process.stdout as any).flush?.();
       }
     }
@@ -156,7 +201,7 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
 
   // For unknown event types, output the raw JSON for debugging
   // Only show the first 10 of each type to avoid spam
-  return `[Event ${eventIndex}] ${type}`;
+  return null;
 }
 
 export interface RunAgentOptions {
@@ -180,7 +225,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   logInfo("Prompt sent to agent:");
   console.log("────────────────────────────────────────────────────────────────────────────────");
   console.log(options.prompt);
-  console.log("────────────────────────────────────────────────────────────────────────────────────────────────────────");
+  console.log("────────────────────────────────────────────────────────────────────────────────");
 
   return await new Promise<AgentRunResult>((resolve) => {
     // Use stream-json format for real-time streaming output
