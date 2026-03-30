@@ -19,7 +19,7 @@ import {
   logSummary,
   logNextStep,
 } from "./reporting/consoleLogger.js";
-import type { RunSummary } from "./types.js";
+import type { RunSummary, LogLevel } from "./types.js";
 
 interface CommonOptions {
   changesDir?: string;
@@ -81,6 +81,8 @@ program
   .option("--timeout-ms <n>", "timeout milliseconds", "1200000")
   .option("--dry-run", "only detect and print, do not execute")
   .option("--resume <runId>", "resume from existing run id")
+  .option("--log-level <level>", "log level: quiet|normal|verbose|debug", "normal")
+  .option("--debug", "enable debug output (alias for --log-level debug)")
   .action(async (opts: CommonOptions & Record<string, string | boolean | undefined>) => {
     logSection("PhSpec Auto Apply - Run");
 
@@ -110,6 +112,12 @@ program
     logInfo(`Max retries: ${opts.retry ?? 1}`);
     logInfo(`Timeout: ${opts.timeoutMs ?? 1200000}ms`);
 
+    // Determine log level
+    const logLevel: LogLevel = opts.debug
+      ? "debug"
+      : (opts.logLevel as LogLevel) || "normal";
+    logInfo(`Log level: ${logLevel}`);
+
     if (opts.dryRun) {
       logWarning("Dry-run mode: No actual changes will be applied");
     }
@@ -127,6 +135,7 @@ program
       runId,
       stateDir: runPaths.runsDir,
       logsDir: runPaths.logsDir,
+      logLevel,
     });
 
     logSection("Execution Summary");

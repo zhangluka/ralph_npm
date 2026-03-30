@@ -44,6 +44,8 @@ export interface RunSummary {
   records: RunChangeRecord[];
 }
 
+export type LogLevel = 'quiet' | 'normal' | 'verbose' | 'debug';
+
 export interface ExecuteOptions {
   projectRoot: string;
   changesDir: string;
@@ -55,6 +57,7 @@ export interface ExecuteOptions {
   runId?: string;
   stateDir: string;
   logsDir: string;
+  logLevel?: LogLevel;
 }
 
 export interface AgentRunResult {
@@ -66,4 +69,33 @@ export interface AgentRunResult {
   durationMs: number;
   timedOut: boolean;
   failureKind?: FailureKind;
+}
+
+// Stream JSON event types
+export interface StreamEvent {
+  type: string;
+  uuid: string;
+  session_id: string;
+  event?: {
+    type: string;
+    content_block?: { type: string; name?: string; input?: unknown };
+    delta?: {
+      text_delta?: string;
+      input_json_delta?: string;
+      partial_json?: string;
+    };
+    message_id?: string;
+    parent_tool_use_id?: string;
+  };
+  message?: {
+    role: string;
+    content: Array<{ type: string; text?: string }>;
+  };
+}
+
+export interface SystemInfo {
+  tools: string[];
+  model: string;
+  cwd?: string;
+  session_id: string;
 }

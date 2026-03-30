@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { setMaxListeners } from "node:events";
-import type { AgentRunResult } from "../types.js";
+import type { AgentRunResult, LogLevel, StreamEvent } from "../types.js";
 import {
   logInfo,
   logDebug,
@@ -8,201 +8,12 @@ import {
   logError,
 } from "../reporting/consoleLogger.js";
 import { LoadingSpinner } from "../utils/loading.js";
+import { AgentOutputManager } from "./outputManager.js";
 
 // Increase max listeners to avoid memory leak warnings
 // devagent may create many AbortSignals, need very high limit
 // Set to Infinity to completely disable this warning
 setMaxListeners(Infinity);
-
-// Types for devagent stream-event JSON
-interface DevAgentStreamEvent {
-  type: string;
-  uuid: string;
-  session_id: string;
-  message?: {
-    role: string;
-    content: Array<{ type: string; text?: string }>;
-  };
-  event?: {
-    type: string;
-    [key: string]: unknown;
-    message_id?: string;
-    parent_tool_use_id?: string;
-    text?: string;
-    delta?: { partial_json?: string };
-    content_block?: {
-      type: string;
-      name?: string;
-      input?: unknown;
-    };
-  };
-}
-
-// Event types we want to show to user
-const VISIBLE_EVENT_TYPES = new Set([
-  "message",        // Assistant/User messages
-  "text_delta",   // Text content from tool output
-  "content_block_delta", // Structured tool output
-]);
-
-// Event types we want to hide (too verbose)
-const HIDDEN_EVENT_TYPES = new Set([
-  "system",        // System events (UUIDs, etc)
-  "tool_use",      // Tool use tracking
-  "stream_event",  // Low-level stream events
-]);
-
-// Tool names we want to show
-const RELEVANT_TOOLS = new Set([
-  "run_shell_command", // Command execution
-  "read_file",        // File reading
-  "glob",           // File searching
-  "edit",            // File editing
-  "write_file",       // File writing
-]);
-
-/**
- * Check if an event should be visible to users
- */
-function shouldShowEvent(event: DevAgentStreamEvent): boolean {
-  // Hide system events and tool_use tracking
-  if (event.type === "system") return false;
-  if (event.type === "tool_use") return false;
-
-  // For assistant messages, check content
-  if (event.type === "assistant" && event.message) {
-    return true;
-  }
-
-  // For stream_event with content_block_delta
-  if (event.type === "stream_event" && event.event && event.event.type === "content_block_delta") {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Format a stream-event for user display
- */
-function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number): string | null {
-  const { type, event } = streamEvent;
-
-  // Format message events with content
-  if (type === "message") {
-    const role = streamEvent.message?.role;
-    const content = streamEvent.message?.content || [];
-
-    for (const msg of content) {
-      if (msg.type === "text" && msg.text) {
-        // Use role prefix for better readability
-        const prefix = role === "assistant" ? "Assistant" : "User";
-        process.stdout.write(prefix + ": " + msg.text + "\n");
-        (process.stdout as any).flush?.();
-      }
-    }
-
-    return null;
-  }
-
-  // Format assistant events (text content from assistant)
-  if (type === "assistant" && streamEvent.message) {
-    const content = streamEvent.message.content || [];
-    for (const msg of content) {
-      if (msg.type === "text" && msg.text) {
-        // Add visual separator for better readability
-        process.stdout.write("\n🤖 Assistant:\n");
-        process.stdout.write(msg.text + "\n");
-        (process.stdout as any).flush?.();
-      }
-    }
-    return null;
-  }
-
-  // Format user events (text content from user)
-  if (type === "user" && streamEvent.message) {
-    const content = streamEvent.message.content || [];
-    for (const msg of content) {
-      if (msg.type === "text" && msg.text) {
-        process.stdout.write("👤 User: " + msg.text + "\n");
-        (process.stdout as any).flush?.();
-      }
-    }
-    return null;
-  }
-
-  // Format text_delta (direct text output)
-  if (type === "text_delta") {
-    const text = event?.text || "";
-    if (text && text.trim()) {
-      process.stdout.write(text);
-      (process.stdout as any).flush?.();
-    }
-    return null;
-  }
-
-  // Format content_block_delta (structured tool output)
-  if (type === "stream_event" && event && event.type === "content_block_delta") {
-    const delta = event.delta as { partial_json?: string };
-    if (delta?.partial_json) {
-      try {
-        const data = JSON.parse(delta.partial_json);
-        if (data.skill === "phspec-apply-change") {
-          const progress = JSON.parse(data.progress || "{}");
-          const total = progress.tasks?.total || 0;
-          const complete = progress.tasks?.complete || 0;
-
-          if (complete > 0) {
-            const percent = Math.round((complete / total) * 100);
-            const bar = "█".repeat(Math.floor(percent / 5));
-            process.stdout.write(`Progress: ${complete}/${total} ${percent}% ${bar}\n`);
-            (process.stdout as any).flush?.();
-          }
-        }
-      } catch {
-        // Ignore JSON parse errors
-      }
-    }
-
-    return null;
-  }
-
-  // Format tool_use and content_block_start
-  if (type === "stream_event" && event && event.type === "content_block_start") {
-    const content_block = event.content_block;
-    if (content_block?.type === "tool_use") {
-      const { name, input } = content_block;
-      if (name && RELEVANT_TOOLS.has(name)) {
-        // Show tool name with icon
-        process.stdout.write(`\n🔧 ${name}\n`);
-
-        // Show key parameters for better context
-        if (input) {
-          const inputObj = input as Record<string, unknown>;
-          // Show file path for file operations
-          if (name === "read_file" && inputObj.file_path) {
-            process.stdout.write(`   📄 ${String(inputObj.file_path)}\n`);
-          }
-          // Show pattern for glob
-          else if (name === "glob" && inputObj.pattern) {
-            process.stdout.write(`   🔍 ${String(inputObj.pattern)}\n`);
-          }
-          // Show command for shell
-          else if (name === "run_shell_command" && inputObj.command) {
-            const cmd = String(inputObj.command);
-            process.stdout.write(`   💻 ${cmd.slice(0, 80)}${cmd.length > 80 ? "..." : ""}\n`);
-          }
-        }
-        (process.stdout as any).flush?.();
-      }
-    }
-    return null;
-  }
-
-  // For unknown event types, output the raw JSON for debugging
-  // Only show the first 10 of each type to avoid spam
-  return null;
-}
 
 export interface RunAgentOptions {
   command: string;
@@ -210,22 +21,35 @@ export interface RunAgentOptions {
   prompt: string;
   timeoutMs: number;
   attempt: number;
+  logLevel?: LogLevel;
+  changeId?: string;
+  maxAttempts?: number;
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult> {
   const startedAt = new Date().toISOString();
   const startTs = Date.now();
+  const logLevel = options.logLevel || "normal";
 
-  logInfo(`Agent process starting (attempt ${options.attempt})`);
-  logInfo(`Timeout set to ${options.timeoutMs}ms`);
-  logInfo(`Command: ${options.command}`);
-  logInfo(`Prompt length: ${options.prompt.length} characters (${(options.prompt.length / 1024).toFixed(2)} KB)`);
+  const outputManager = new AgentOutputManager(logLevel);
 
-  // Output full prompt
-  logInfo("Prompt sent to agent:");
-  console.log("────────────────────────────────────────────────────────────────────────────────");
-  console.log(options.prompt);
-  console.log("────────────────────────────────────────────────────────────────────────────────");
+  logDebug(`Agent process starting (attempt ${options.attempt})`);
+  logDebug(`Timeout set to ${options.timeoutMs}ms`);
+  logDebug(`Command: ${options.command}`);
+  logDebug(`Prompt length: ${options.prompt.length} characters (${(options.prompt.length / 1024).toFixed(2)} KB)`);
+
+  // Show prompt only in debug mode
+  if (logLevel === "debug") {
+    logInfo("Prompt sent to agent:");
+    console.log("────────────────────────────────────────────────────────────────────────────────");
+    console.log(options.prompt);
+    console.log("────────────────────────────────────────────────────────────────────────────────");
+  }
+
+  outputManager.startSection(
+    `Agent Execution: ${options.changeId || "unknown"}`,
+    `attempt ${options.attempt}/${options.maxAttempts || 99}`
+  );
 
   return await new Promise<AgentRunResult>((resolve) => {
     // Use stream-json format for real-time streaming output
@@ -247,9 +71,6 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     logDebug(`Agent process spawned with PID: ${child.pid}`);
     logDebug(`Using stream-json format for real-time output`);
 
-    logInfo("\n📊 Agent Output:\n");
-    console.log("────────────────────────────────────────────────────────────────────────────────");
-
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -262,8 +83,188 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     const eventTypesSeen = new Map<string, number>();
     const eventSamples = new Map<string, any[]>();
 
+    // State tracking for event processing
+    let currentTool: string | null = null;
+    let inTextBlock = false;
+    let streamBuffer = "";
+
     // Start loading animation
     LoadingSpinner.start("Agent is working...");
+
+    // Event handler function
+    const handleEvent = (event: StreamEvent): void => {
+      switch (event.type) {
+        case "system":
+          outputManager.debugSystemInfo(event);
+          break;
+
+        case "message":
+          handleMessage(event);
+          break;
+
+        case "assistant":
+          handleAssistant(event);
+          break;
+
+        case "user":
+          handleUser(event);
+          break;
+
+        case "stream_event":
+          handleStreamEvent(event);
+          break;
+
+        case "result":
+          // Final result - handled in finalize
+          break;
+      }
+    };
+
+    const handleMessage = (event: StreamEvent): void => {
+      const role = event.message?.role;
+      const content = event.message?.content || [];
+
+      if (role === "assistant") {
+        handleAssistant(event);
+        return;
+      }
+
+      if (role === "user") {
+        handleUser(event);
+        return;
+      }
+    };
+
+    const handleAssistant = (event: StreamEvent): void => {
+      const content = event.message?.content || [];
+      for (const msg of content) {
+        if (msg.type === "text" && msg.text) {
+          outputManager.startStreamText("assistant");
+          outputManager.appendStreamText(msg.text);
+          outputManager.flushStreamText();
+        }
+      }
+    };
+
+    const handleUser = (event: StreamEvent): void => {
+      const content = event.message?.content || [];
+      for (const msg of content) {
+        if (msg.type === "text" && msg.text) {
+          outputManager.startStreamText("user");
+          outputManager.appendStreamText(msg.text);
+          outputManager.flushStreamText();
+        }
+      }
+    };
+
+    const handleStreamEvent = (event: StreamEvent): void => {
+      const inner = event.event;
+      if (!inner) return;
+
+      switch (inner.type) {
+        case "content_block_start":
+          handleContentBlockStart(event);
+          break;
+
+        case "content_block_delta":
+          handleContentBlockDelta(event);
+          break;
+
+        case "content_block_stop":
+          handleContentBlockStop();
+          break;
+
+        case "message_start":
+          // Just a marker, nothing to show
+          break;
+
+        case "message_stop":
+          // Flush any remaining text
+          if (streamBuffer) {
+            outputManager.appendStreamText(streamBuffer);
+            streamBuffer = "";
+          }
+          break;
+      }
+    };
+
+    const handleContentBlockStart = (event: StreamEvent): void => {
+      const contentBlock = event.event?.content_block;
+      if (!contentBlock) return;
+
+      if (contentBlock.type === "tool_use") {
+        const name = contentBlock.name;
+        const input = contentBlock.input as Record<string, unknown> | undefined;
+
+        if (name) {
+          currentTool = name;
+          outputManager.showToolStart(name, input);
+        }
+      } else if (contentBlock.type === "text") {
+        inTextBlock = true;
+        outputManager.startStreamText("assistant");
+      }
+    };
+
+    const handleContentBlockDelta = (event: StreamEvent): void => {
+      const delta = event.event?.delta;
+      if (!delta) return;
+
+      if (delta.text_delta && inTextBlock) {
+        // Accumulate text delta
+        streamBuffer += delta.text_delta;
+
+        // Flush when buffer gets large or has newlines
+        if (streamBuffer.length > 500 || streamBuffer.includes("\n")) {
+          outputManager.appendStreamText(streamBuffer);
+          streamBuffer = "";
+        }
+      }
+
+      // Handle skill progress updates
+      if (delta.partial_json) {
+        try {
+          const data = JSON.parse(delta.partial_json);
+          if (data.skill === "phspec-apply-change" && data.progress) {
+            const progress = JSON.parse(data.progress || "{}");
+            const total = progress.tasks?.total || 0;
+            const complete = progress.tasks?.complete || 0;
+
+            if (complete > 0 && logLevel !== "quiet") {
+              const percent = Math.round((complete / total) * 100);
+              const bar = "█".repeat(Math.floor(percent / 5));
+              process.stdout.write(`  Progress: ${complete}/${total} ${percent}% ${bar}\n`);
+              (process.stdout as any).flush?.();
+            }
+          }
+        } catch {
+          // Ignore JSON parse errors
+        }
+      }
+    };
+
+    const handleContentBlockStop = (): void => {
+      // Flush remaining buffer
+      if (streamBuffer) {
+        outputManager.appendStreamText(streamBuffer);
+        streamBuffer = "";
+      }
+
+      // End current tool or text block
+      if (currentTool) {
+        const duration = outputManager["activeTools"].get(currentTool);
+        if (duration) {
+          const elapsed = Date.now() - duration;
+          outputManager.showToolResult(currentTool, undefined, elapsed);
+        }
+        currentTool = null;
+      }
+
+      if (inTextBlock) {
+        outputManager.flushStreamText();
+        inTextBlock = false;
+      }
+    };
 
     // Need to capture output for logging
     const stdoutStream = child.stdout;
@@ -277,7 +278,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
           if (!line.trim()) continue;
 
           try {
-            const event = JSON.parse(line) as DevAgentStreamEvent;
+            const event = JSON.parse(line) as StreamEvent;
             eventCount++;
 
             // Track event types for debugging
@@ -291,15 +292,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
               eventSamples.set(event.type, samples);
             }
 
-            const formatted = formatStreamEvent(event, eventCount);
-            if (formatted) {
-              process.stdout.write(formatted + "\n");
-              (process.stdout as any).flush?.();
-            }
+            // Handle the event using the new event handler
+            handleEvent(event);
           } catch (e) {
-            // If JSON parse fails, just output line as-is
-            process.stdout.write(line + "\n");
-            (process.stdout as any).flush?.();
+            // If JSON parse fails, log in debug mode
+            if (logLevel === "debug") {
+              logDebug(`[STDOUT PARSE ERROR] ${line.slice(0, 100)}`);
+            }
           }
         }
 
@@ -356,33 +355,20 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       // Force flush any remaining buffered output
       if (buffer) {
         logDebug(`Flushing remaining buffer: ${buffer.slice(0, 100)}...`);
-        process.stdout.write(buffer + "\n");
       }
+
+      // Flush any remaining stream text
+      outputManager.flushStreamText();
 
       // Log event type statistics for debugging
-      if (eventTypesSeen.size > 0) {
-        logInfo("\n📊 Event Type Statistics:");
-        console.log("────────────────────────────────────────────────────────────────────────────────");
-        const sortedTypes = Array.from(eventTypesSeen.entries()).sort((a, b) => b[1] - a[1]);
-        for (const [type, count] of sortedTypes) {
-          const percentage = ((count / eventCount) * 100).toFixed(1);
-          console.log(`  ${type}: ${count} times (${percentage}%)`);
-        }
-        console.log("────────────────────────────────────────────────────────────────────────────────");
-      }
+      outputManager.debugEventStats(eventTypesSeen, eventCount);
 
       // Show first few samples of each event type for debugging
-      if (eventSamples.size > 0) {
-        logInfo("\n🔍 Event Type Samples (first few of each type):");
-        console.log("────────────────────────────────────────────────────────────────────────────────");
-        for (const [type, samples] of eventSamples) {
-          console.log(`\n  Type: ${type}`);
-          for (let i = 0; i < samples.length; i++) {
-            console.log(`    Sample ${i + 1}:`, JSON.stringify(samples[i], null, 2).slice(0, 500) + "...");
-          }
-        }
-        console.log("────────────────────────────────────────────────────────────────────────────────");
-      }
+      outputManager.debugEventSamples(eventSamples);
+
+      // End the output section
+      const result = payload.failureKind ? "error" : "success";
+      outputManager.endSection(result, duration);
 
       resolve({
         exitCode: null,

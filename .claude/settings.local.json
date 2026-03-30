@@ -13,7 +13,11 @@
       "Bash(find /Users/bobby/Projects/Github/zhangluka/ralph_npm -name phspec* -o -name *phspec* -o -name claude*.json -o -name settings*.json)",
       "Bash(node -e \":*)",
       "Bash(npm test:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(Check exact:*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(node:*)"
     ]
   }
 }

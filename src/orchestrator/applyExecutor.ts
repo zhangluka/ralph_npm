@@ -7,7 +7,7 @@ import {
   writeChangeLog,
   writeRunState,
 } from "../reporting/logger.js";
-import type { ChangeItem, ExecuteOptions, RunChangeRecord, RunSummary } from "../types.js";
+import type { ChangeItem, ExecuteOptions, RunChangeRecord, RunSummary, LogLevel } from "../types.js";
 import {
   logInfo,
   logSuccess,
@@ -184,6 +184,9 @@ export async function executeApplyQueue(
           prompt,
           timeoutMs: options.timeoutMs,
           attempt,
+          logLevel: options.logLevel,
+          changeId: change.id,
+          maxAttempts: options.retry,
         });
 
         logTaskProgress(change.id, `agent finished (exitCode: ${result.exitCode}, duration: ${result.durationMs}ms)`);
