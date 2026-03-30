@@ -17,7 +17,8 @@
       "Bash(Check exact:*)",
       "WebFetch(domain:github.com)",
       "WebSearch",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "WebFetch(domain:ghuntley.com)"
     ]
   }
 }
