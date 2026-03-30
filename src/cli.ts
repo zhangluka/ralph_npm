@@ -13,11 +13,13 @@ import {
   logSection,
   logSuccess,
   logInfo,
+  logDebug,
   logError,
   logWarning,
   logSummary,
   logNextStep,
 } from "./reporting/consoleLogger.js";
+import type { RunSummary } from "./types.js";
 
 interface CommonOptions {
   changesDir?: string;
@@ -75,7 +77,7 @@ program
   .option("--changes-dir <path>", "changes directory, e.g. phspec/changes")
   .option("--agent-cmd <command>", "agent command", "devagent --yolo")
   .option("--concurrency <n>", "concurrency", "1")
-  .option("--retry <n>", "retry times", "1")
+  .option("--retry <n>", "retry times", "99")
   .option("--timeout-ms <n>", "timeout milliseconds", "1200000")
   .option("--dry-run", "only detect and print, do not execute")
   .option("--resume <runId>", "resume from existing run id")
@@ -118,7 +120,7 @@ program
       projectRoot,
       changesDir,
       agentCommand,
-      retry: Number(opts.retry ?? 1),
+      retry: Number(opts.retry ?? 99),
       timeoutMs: Number(opts.timeoutMs ?? 1200000),
       concurrency: Number(opts.concurrency ?? 1),
       dryRun: Boolean(opts.dryRun),
@@ -159,9 +161,37 @@ program
     const runPaths = await ensureRunPaths(projectRoot);
     const statePath = resolveRunStatePath(runPaths.runsDir, runId);
 
-    logInfo(`Reading run state for: ${runId}`);
-    const summary = await readRunState(statePath);
-    logSuccess("Run state loaded");
+    logInfo(`Reading run state for runId: ${runId}`);
+    logDebug(`State file path: ${statePath}`);
+
+    let summary: RunSummary | null = null;
+    try {
+      summary = await readRunState(statePath);
+      logSuccess("Run state loaded");
+    } catch (error) {
+      const err = error as { code?: string };
+      if (err.code === "ENOENT") {
+        logError(`Run state file not found: ${statePath}`);
+        logInfo(`This may be because:`);
+        logInfo(`  1. The run was interrupted before state could be saved`);
+        logInfo(`  2. The run ID is incorrect`);
+        logInfo(`  3. The state file was deleted`);
+        console.log("");
+        logInfo(`You can check the logs directory for available runs:`);
+        logInfo(`  ${path.join(runPaths.logsDir)}`);
+        console.log("");
+        logInfo(`Or use 'phspec-auto-apply list' to see available changes.`);
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
+
+    if (!summary) {
+      logError("Summary is null, this should not happen");
+      process.exitCode = 1;
+      return;
+    }
 
     logSummary("Run Info", {
       runId: summary.runId,
