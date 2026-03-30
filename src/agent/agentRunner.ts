@@ -232,6 +232,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
             const formatted = formatStreamEvent(event, eventCount);
             if (formatted) {
               process.stdout.write(formatted + "\n");
+              (process.stdout as any).flush?.();
             }
           } catch {
             // If JSON parse fails, just output line as-is
@@ -268,8 +269,11 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
           LoadingSpinner.stop(false);
         }
 
-        // Write stderr immediately
+        // Write stderr immediately and flush
+        // Also log for debugging
         process.stderr.write(text);
+        (process.stderr as any).flush?.();
+        logDebug(`[STDERR] ${text.replace(/\n/g, "\\n")}`);
       });
     }
 
@@ -285,6 +289,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       const finishedAt = new Date().toISOString();
       const duration = Date.now() - startTs;
       logDebug(`Agent process finalized (duration: ${duration}ms, stdout lines: ${stdoutLines}, stderr lines: ${stderrLines})`);
+
+      // Force flush any remaining buffered output
+      if (buffer) {
+        logDebug(`Flushing remaining buffer: ${buffer.slice(0, 100)}...`);
+        process.stdout.write(buffer + "\n");
+      }
+
       resolve({
         exitCode: null,
         stdout,
