@@ -88,11 +88,6 @@ function shouldShowEvent(event: DevAgentStreamEvent): boolean {
 function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number): string | null {
   const { type, event } = streamEvent;
 
-  // Hide verbose events
-  if (HIDDEN_EVENT_TYPES.has(type)) {
-    return null;
-  }
-
   // Format message events with content
   if (type === "message") {
     const role = streamEvent.message?.role;
@@ -102,7 +97,8 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
       if (msg.type === "text" && msg.text) {
         // Use role prefix for better readability
         const prefix = role === "assistant" ? "Assistant" : "User";
-        process.stdout.write(prefix + msg.text + "\n");
+        process.stdout.write(prefix + ": " + msg.text + "\n");
+        (process.stdout as any).flush?.();
       }
     }
 
@@ -113,7 +109,8 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
   if (type === "text_delta") {
     const text = event?.text || "";
     if (text && text.trim()) {
-      process.stdout.write(text + "\n");
+      process.stdout.write(text);
+      (process.stdout as any).flush?.();
     }
     return null;
   }
@@ -133,6 +130,7 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
             const percent = Math.round((complete / total) * 100);
             const bar = "█".repeat(Math.floor(percent / 5));
             process.stdout.write(`Progress: ${complete}/${total} ${percent}% ${bar}\n`);
+            (process.stdout as any).flush?.();
           }
         }
       } catch {
@@ -150,12 +148,15 @@ function formatStreamEvent(streamEvent: DevAgentStreamEvent, eventIndex: number)
       const { name, input } = content_block;
       if (name && RELEVANT_TOOLS.has(name) && input) {
         process.stdout.write(`Tool: ${name}\n`);
+        (process.stdout as any).flush?.();
       }
     }
     return null;
   }
 
-  return null;
+  // For unknown event types, output the raw JSON for debugging
+  // Only show the first 10 of each type to avoid spam
+  return `[Event ${eventIndex}] ${type}`;
 }
 
 export interface RunAgentOptions {
@@ -201,6 +202,9 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     logDebug(`Agent process spawned with PID: ${child.pid}`);
     logDebug(`Using stream-json format for real-time output`);
 
+    logInfo("\n📊 Agent Output:\n");
+    console.log("────────────────────────────────────────────────────────────────────────────────");
+
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -210,6 +214,8 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
     let hasOutput = false;
     let buffer = "";
     let eventCount = 0;
+    const eventTypesSeen = new Map<string, number>();
+    const eventSamples = new Map<string, any[]>();
 
     // Start loading animation
     LoadingSpinner.start("Agent is working...");
@@ -229,14 +235,26 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
             const event = JSON.parse(line) as DevAgentStreamEvent;
             eventCount++;
 
+            // Track event types for debugging
+            const currentCount = (eventTypesSeen.get(event.type) || 0) + 1;
+            eventTypesSeen.set(event.type, currentCount);
+
+            // Store first 2 samples of each event type
+            const samples = eventSamples.get(event.type) || [];
+            if (samples.length < 2) {
+              samples.push(event);
+              eventSamples.set(event.type, samples);
+            }
+
             const formatted = formatStreamEvent(event, eventCount);
             if (formatted) {
               process.stdout.write(formatted + "\n");
               (process.stdout as any).flush?.();
             }
-          } catch {
+          } catch (e) {
             // If JSON parse fails, just output line as-is
             process.stdout.write(line + "\n");
+            (process.stdout as any).flush?.();
           }
         }
 
@@ -294,6 +312,31 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
       if (buffer) {
         logDebug(`Flushing remaining buffer: ${buffer.slice(0, 100)}...`);
         process.stdout.write(buffer + "\n");
+      }
+
+      // Log event type statistics for debugging
+      if (eventTypesSeen.size > 0) {
+        logInfo("\n📊 Event Type Statistics:");
+        console.log("────────────────────────────────────────────────────────────────────────────────");
+        const sortedTypes = Array.from(eventTypesSeen.entries()).sort((a, b) => b[1] - a[1]);
+        for (const [type, count] of sortedTypes) {
+          const percentage = ((count / eventCount) * 100).toFixed(1);
+          console.log(`  ${type}: ${count} times (${percentage}%)`);
+        }
+        console.log("────────────────────────────────────────────────────────────────────────────────");
+      }
+
+      // Show first few samples of each event type for debugging
+      if (eventSamples.size > 0) {
+        logInfo("\n🔍 Event Type Samples (first few of each type):");
+        console.log("────────────────────────────────────────────────────────────────────────────────");
+        for (const [type, samples] of eventSamples) {
+          console.log(`\n  Type: ${type}`);
+          for (let i = 0; i < samples.length; i++) {
+            console.log(`    Sample ${i + 1}:`, JSON.stringify(samples[i], null, 2).slice(0, 500) + "...");
+          }
+        }
+        console.log("────────────────────────────────────────────────────────────────────────────────");
       }
 
       resolve({
