@@ -79,9 +79,7 @@ export function logError(message: string, options?: Omit<ConsoleLogOptions, "lev
 }
 
 export function logDebug(message: string, options?: Omit<ConsoleLogOptions, "level">): void {
-  if (process.env.DEBUG === "true") {
-    writeLog(LogLevel.DEBUG, message, { ...options, level: LogLevel.DEBUG });
-  }
+  writeLog(LogLevel.DEBUG, message, { ...options, level: LogLevel.DEBUG });
 }
 
 export function logSection(title: string): void {
