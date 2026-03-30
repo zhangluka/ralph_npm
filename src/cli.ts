@@ -77,7 +77,7 @@ program
   .option("--changes-dir <path>", "changes directory, e.g. phspec/changes")
   .option("--agent-cmd <command>", "agent command", "devagent --yolo")
   .option("--concurrency <n>", "concurrency", "1")
-  .option("--retry <n>", "retry times", "1")
+  .option("--retry <n>", "retry times", "99")
   .option("--timeout-ms <n>", "timeout milliseconds", "1200000")
   .option("--dry-run", "only detect and print, do not execute")
   .option("--resume <runId>", "resume from existing run id")
@@ -120,7 +120,7 @@ program
       projectRoot,
       changesDir,
       agentCommand,
-      retry: Number(opts.retry ?? 1),
+      retry: Number(opts.retry ?? 99),
       timeoutMs: Number(opts.timeoutMs ?? 1200000),
       concurrency: Number(opts.concurrency ?? 1),
       dryRun: Boolean(opts.dryRun),

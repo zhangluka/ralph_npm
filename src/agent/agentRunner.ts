@@ -184,7 +184,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentRunResult
   return await new Promise<AgentRunResult>((resolve) => {
     // Use stream-json format for real-time streaming output
     // This provides real-time execution progress and logs
-    const commandWithFormat = `${options.command} --format stream-json --include-partial-messages`;
+    const commandWithFormat = `${options.command} --output-format stream-json --include-partial-messages`;
 
     // Connect to stdout/stderr for real-time output
     // Streams will flush immediately with no buffering
